@@ -8,6 +8,33 @@ class ZodiacDatabase:
         self.mydb = mysql.connector.connect(host=host, user=user, password=password, database=database)
         self.create_table()
 
+
+    def __init_(self, host, user, password, database):
+        try:
+            self.mydb = mysql.connector.connect(host=host, user=user, password=password, database=database)
+        except mysql.connector.Error as err:
+            if err.errno == mysql.connector.errorcode.ER_BAD_DB_ERROR:
+                # The database does not exist, so let's create it
+                self.create_database(host, user, password, database)
+                self.mydb = mysql.connector.connect(host=host, user=user, password=password, database=database)
+            else:
+                print(f"Error: {err}")
+                print("Failed to connect to the database.")
+
+        self.create_table()
+
+    def create_database(self, host, user, password, database):
+        try:
+            connection = mysql.connector.connect(host=host, user=user, password=password)
+            cursor = connection.cursor()
+            cursor.execute(f"CREATE DATABASE {database}")
+            print(f"Database '{database}' created successfully.")
+            connection.close()
+        except mysql.connector.Error as err:
+            print(f"Error: {err}")
+            print("Failed to create the database.")
+
+
     def create_table(self):
         try:
             with self.mydb.cursor() as cursor:
@@ -69,6 +96,25 @@ class ZodiacDatabase:
             print(f"Error: {err}")
             print(f"Failed to update entry {entry_id}.")
 
+    def get_all_entries(self):
+        try:
+            with self.mydb.cursor() as cursor:
+                cursor.execute("SELECT * FROM horoscope")
+                entries = cursor.fetchall()
+                return entries
+        except mysql.connector.Error as err:
+            print(f"Error: {err}")
+            return None
+
+    def delete_entry(self, entry_id):
+        try:
+            with self.mydb.cursor() as cursor:
+                cursor.execute("DELETE FROM horoscope WHERE id=%s", (entry_id,))
+                self.mydb.commit()
+        except mysql.connector.Error as err:
+            print(f"Error: {err}")
+            print(f"Failed to delete entry with ID {entry_id}.")
+
 class ZodiacApp:
     def __init__(self, root, database):
         self.root = root
@@ -106,6 +152,7 @@ class ZodiacApp:
 
         ttk.Button(self.root, text="Submit", command=self.get_zodiac_data).grid(row=6, column=0, columnspan=2, pady=10,
                                                                                padx=10)
+
 
         ttk.Button(self.root, text="Login as Admin", command=self.login_as_admin).grid(row=7, column=0, columnspan=2,
                                                                                      pady=10, padx=10)
@@ -146,27 +193,57 @@ class ZodiacApp:
         else:
             messagebox.showerror("Admin Login", "Invalid password. Try again.")
 
+
     def create_admin_widgets(self):
         ttk.Label(self.root, text="Admin Section", font=("Helvetica", 16, "bold")).grid(row=8, column=0, columnspan=2, pady=10)
 
         ttk.Button(self.root, text="Delete Latest Entries", command=self.delete_latest_entries).grid(row=9, column=0, columnspan=2,
                                                                                                     pady=10, padx=10)
-        ttk.Button(self.root, text="Update Entry", command=self.update_entry_dialog).grid(row=10, column=0, columnspan=2,
-                                                                                        pady=10, padx=10)
+        
+        ttk.Button(self.root, text="View Entries", command=self.view_entries).grid(row=11, column=0, columnspan=2, pady=10, padx=10)
+
+    def view_entries(self):
+        entries = self.database.get_all_entries()
+        if entries:
+            self.show_entries(entries)
+        else:
+            messagebox.showinfo("View Entries", "No entries found.")
 
     def delete_latest_entries(self):
         num_entries = 1
         self.database.delete_latest_entries(num_entries)
 
-    def update_entry_dialog(self):
-        entry_id = simpledialog.askinteger("Update Entry", "Enter Entry ID:")
-        if entry_id is not None:   
-            entry_data = self.get_entry_data(entry_id)
-            if entry_data:
-                self.show_entry_data(entry_data)
-                self.update_entry(entry_id, *entry_data)
-            else:
-                messagebox.showerror("Update Entry", f"Entry with ID {entry_id} not found.")
+    def show_entries(self, entries):
+        # Display entries in a new window
+        window = tk.Toplevel(self.root)
+        window.title("All Entries")
+
+        ttk.Label(window, text="All Entries", font=("Helvetica", 16, "bold")).grid(row=0, column=0, columnspan=2, pady=10)
+
+        for i, entry in enumerate(entries, start=1):
+            ttk.Label(window, text=f"Entry {i}").grid(row=i, column=0, pady=5, padx=10, sticky=tk.W)
+            ttk.Label(window, text=f"ID: {entry[0]} | Name: {entry[1]} | Zodiac: {entry[2]}").grid(row=i, column=1, pady=5, padx=10, sticky=tk.W)
+            ttk.Button(window, text="Update", command=lambda entry_id=entry[0]: self.update_entry_dialog(entry_id)).grid(row=i, column=2, pady=5, padx=10)
+            ttk.Button(window, text="Delete", command=lambda id=entry[0]: self.delete_entry(id)).grid(row=i, column=3, pady=5, padx=10)
+
+    def delete_entry(self, entry_id):
+        result = messagebox.askokcancel("Delete Entry", f"Do you want to delete entry with ID {entry_id}?")
+        if result:
+            self.database.delete_entry(entry_id)
+            messagebox.showinfo("Delete Entry", f"Entry with ID {entry_id} deleted successfully.")
+
+    def update_entry_dialog(self, entry_id):
+        updated_name = simpledialog.askstring("Update Entry", "Enter updated name:")
+        updated_zodiac_sign = simpledialog.askstring("Update Entry", "Enter updated zodiac sign:")
+        updated_horoscope = simpledialog.askstring("Update Entry", "Enter updated horoscope:")
+        updated_lucky_number = simpledialog.askstring("Update Entry", "Enter updated lucky number:")
+        updated_lucky_color = simpledialog.askstring("Update Entry", "Enter updated lucky color:")
+        updated_compatibility = simpledialog.askstring("Update Entry", "Enter updated compatibility:")
+
+        if updated_name is not None:
+            self.database.update_entry(entry_id, updated_name, updated_zodiac_sign, updated_horoscope, updated_lucky_number, updated_lucky_color, updated_compatibility)
+
+
 
     def get_entry_data(self, entry_id):
         try:
@@ -191,8 +268,19 @@ class ZodiacApp:
         else:
             messagebox.showerror("Show Entry Data", "Entry data not found.")
 
-    def update_entry(self, entry_id, user_name, zodiac_sign, horoscope, lucky_number, lucky_color, compatibility):
-        self.database.update_entry(entry_id, user_name, zodiac_sign, horoscope, lucky_number, lucky_color, compatibility)
+def update_entry(self, entry_id, user_name, zodiac_sign, horoscope, lucky_number, lucky_color, compatibility):
+    try:
+        with self.mydb.cursor() as cursor:
+            sql = "UPDATE horoscope SET user_name=%s, zodiac_sign=%s, horoscope=%s, lucky_number=%s, lucky_color=%s, compatibility=%s WHERE id=%s"
+            val = (user_name, zodiac_sign, horoscope, lucky_number, lucky_color, compatibility, entry_id)
+            cursor.execute(sql, val)
+        self.mydb.commit()
+        print(f"Entry {entry_id} updated successfully.")
+    except mysql.connector.Error as err:
+        print(f"Error: {err}")
+        print(f"Failed to update entry {entry_id}.")
+
+
 
 if __name__ == "__main__":
     zodiac_data = {
@@ -287,3 +375,5 @@ if __name__ == "__main__":
     app = ZodiacApp(root, database)
 
     root.mainloop()
+
+

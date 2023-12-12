@@ -6,34 +6,37 @@ import mysql.connector
 class ZodiacDatabase:
     def __init__(self, host, user, password, database):
         self.mydb = mysql.connector.connect(host=host, user=user, password=password, database=database)
-        self.create_table()
-
-
-    def __init_(self, host, user, password, database):
-        try:
-            self.mydb = mysql.connector.connect(host=host, user=user, password=password, database=database)
-        except mysql.connector.Error as err:
-            if err.errno == mysql.connector.errorcode.ER_BAD_DB_ERROR:
-                # The database does not exist, so let's create it
-                self.create_database(host, user, password, database)
-                self.mydb = mysql.connector.connect(host=host, user=user, password=password, database=database)
-            else:
-                print(f"Error: {err}")
-                print("Failed to connect to the database.")
-
+        self.create_database(host, user, password, database)
         self.create_table()
 
     def create_database(self, host, user, password, database):
         try:
-            connection = mysql.connector.connect(host=host, user=user, password=password)
-            cursor = connection.cursor()
-            cursor.execute(f"CREATE DATABASE {database}")
-            print(f"Database '{database}' created successfully.")
-            connection.close()
+            print(f"Connecting to MySQL server ({host}) to create or connect to the database.")
+            self.mydb = mysql.connector.connect(host=host, user=user, password=password, database=database)
+            print(f"Connected to MySQL server.")
+
+            cursor = self.mydb.cursor(buffered=True)
+    
+
+            # Check if the database exists
+            cursor.execute("SHOW DATABASES LIKE %s", (database,))
+            result = cursor.fetchone()
+
+            if not result:
+                # Create the database if it doesn't exist
+                print(f"Creating database '{database}'.")
+                cursor.execute(f"CREATE DATABASE {database}")
+                print(f"Database '{database}' created.")
+            else:
+                print(f"Database '{database}' already exists.")
+
+            # Switch to the specified database
+            cursor.execute(f"USE {database}")
+            print(f"Using database '{database}'.")
+
         except mysql.connector.Error as err:
             print(f"Error: {err}")
-            print("Failed to create the database.")
-
+            print("Failed to create or connect to the database.")
 
     def create_table(self):
         try:
@@ -50,7 +53,7 @@ class ZodiacDatabase:
                     )
                 """)
             self.mydb.commit()
-            print("Table created or already exists.")
+            print("Table 'horoscope' created or already exists.")
         except mysql.connector.Error as err:
             print(f"Error: {err}")
             print("Failed to create the table.")
@@ -114,8 +117,8 @@ class ZodiacDatabase:
         except mysql.connector.Error as err:
             print(f"Error: {err}")
             print(f"Failed to delete entry with ID {entry_id}.")
-
 class ZodiacApp:
+    
     def __init__(self, root, database):
         self.root = root
         self.database = database
@@ -196,10 +199,7 @@ class ZodiacApp:
 
     def create_admin_widgets(self):
         ttk.Label(self.root, text="Admin Section", font=("Helvetica", 16, "bold")).grid(row=8, column=0, columnspan=2, pady=10)
-
-        ttk.Button(self.root, text="Delete Latest Entries", command=self.delete_latest_entries).grid(row=9, column=0, columnspan=2,
-                                                                                                    pady=10, padx=10)
-        
+        ttk.Button(self.root, text="Delete Latest Entries", command=self.delete_latest_entries).grid(row=9, column=0, columnspan=2,pady=10, padx=10)      
         ttk.Button(self.root, text="View Entries", command=self.view_entries).grid(row=11, column=0, columnspan=2, pady=10, padx=10)
 
     def view_entries(self):
@@ -375,5 +375,4 @@ if __name__ == "__main__":
     app = ZodiacApp(root, database)
 
     root.mainloop()
-
 
